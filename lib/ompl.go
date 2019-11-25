@@ -2,19 +2,21 @@ package lib
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bcongdon/youtube-patreon-finder/lib/channels"
+	"github.com/cheggaaa/pb/v3"
 	"github.com/gilliek/go-opml/opml"
 )
 
 type Subscription struct {
 	Channel    *channels.Channel
 	PatreonURL string
+	Err        error
 }
 
 func parsePatreonLinkFromRedirect(redirect string) (string, bool) {
@@ -60,26 +62,48 @@ func GetPatreonURL(url string) (string, error) {
 func FromFile(path string) ([]*Subscription, error) {
 	doc, err := opml.NewOPMLFromFile(path)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	rootOutlines := doc.Outlines()
 	subscriptions := rootOutlines[0].Outlines
+	bar := pb.StartNew(len(subscriptions))
 
-	var out []*Subscription
-	for _, sub := range subscriptions {
-		c, err := channels.New(sub.XMLURL, sub.Title)
-		if err != nil {
-			return nil, err
-		}
-		patreonLink, err := GetPatreonURL(c.AboutURL())
-		fmt.Println(c, patreonLink)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		out = append(out, &Subscription{c, patreonLink})
+	var wg sync.WaitGroup
+	inCh := make(chan *channels.Channel)
+	outCh := make(chan *Subscription, 10)
+
+	// Patreon link fetchers
+	for i := 0; i < 5; i++ {
+		go func() {
+			for c := range inCh {
+				patreonLink, err := GetPatreonURL(c.AboutURL())
+				outCh <- &Subscription{c, patreonLink, err}
+			}
+		}()
 	}
 
-	return out, nil
+	go func() {
+		defer close(inCh)
+		defer close(outCh)
+		for _, sub := range subscriptions {
+			c, err := channels.New(sub.XMLURL, sub.Title)
+			if err != nil {
+				continue
+			}
+			wg.Add(1)
+			inCh <- c
+		}
+		wg.Wait()
+	}()
+
+	var subs []*Subscription
+	for c := range outCh {
+		subs = append(subs, c)
+		wg.Done()
+		bar.Increment()
+	}
+	bar.Finish()
+
+	return subs, nil
 }
