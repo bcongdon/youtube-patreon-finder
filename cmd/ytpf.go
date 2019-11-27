@@ -1,18 +1,23 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"sort"
 	"strings"
 
-	"github.com/bcongdon/youtube-patreon-finder/lib"
+	"github.com/bcongdon/youtube-patreon-finder/pkg/ytpf"
 	"github.com/olekukonko/tablewriter"
 )
 
 func main() {
+	if len(os.Args) != 2 {
+		fmt.Println("USAGE: ytpf <opml_file>")
+		os.Exit(1)
+	}
 	file := os.Args[1]
-	subscriptions, err := lib.FromFile(file)
+	subscriptions, err := ytpf.FromOPMLFile(file)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}

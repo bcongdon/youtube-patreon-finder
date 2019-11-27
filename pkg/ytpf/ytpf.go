@@ -1,17 +1,20 @@
-package lib
+package ytpf
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/bcongdon/youtube-patreon-finder/lib/channels"
+	"github.com/bcongdon/youtube-patreon-finder/pkg/channels"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/gilliek/go-opml/opml"
 )
+
+const parallelism = 5
 
 type Subscription struct {
 	Channel    *channels.Channel
@@ -31,8 +34,8 @@ func parsePatreonLinkFromRedirect(redirect string) (string, bool) {
 	return "", false
 }
 
-func GetPatreonURL(url string) (string, error) {
-	res, err := http.Get(url)
+func getPatreonURLForChannel(channelURL string) (string, error) {
+	res, err := http.Get(channelURL)
 	if err != nil {
 		return "", nil
 	}
@@ -59,8 +62,8 @@ func GetPatreonURL(url string) (string, error) {
 	return patreonLink, nil
 }
 
-func FromFile(path string) ([]*Subscription, error) {
-	doc, err := opml.NewOPMLFromFile(path)
+func FromOPML(data []byte) ([]*Subscription, error) {
+	doc, err := opml.NewOPML(data)
 	if err != nil {
 		return nil, err
 	}
@@ -74,10 +77,10 @@ func FromFile(path string) ([]*Subscription, error) {
 	outCh := make(chan *Subscription, 10)
 
 	// Patreon link fetchers
-	for i := 0; i < 5; i++ {
+	for i := 0; i < parallelism; i++ {
 		go func() {
 			for c := range inCh {
-				patreonLink, err := GetPatreonURL(c.AboutURL())
+				patreonLink, err := getPatreonURLForChannel(c.AboutURL())
 				outCh <- &Subscription{c, patreonLink, err}
 			}
 		}()
@@ -106,4 +109,12 @@ func FromFile(path string) ([]*Subscription, error) {
 	bar.Finish()
 
 	return subs, nil
+}
+
+func FromOPMLFile(path string) ([]*Subscription, error) {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return FromOPML(data)
 }
