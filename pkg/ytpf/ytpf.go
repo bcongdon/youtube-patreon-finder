@@ -1,7 +1,9 @@
 package ytpf
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -16,10 +18,12 @@ import (
 
 const parallelism = 5
 
+const mb = 1 << (10 * 3)
+
 type Subscription struct {
-	Channel    *channels.Channel
-	PatreonURL string
-	Err        error
+	Channel    *channels.Channel `json:"channel"`
+	PatreonURL string            `json:"patreon_url"`
+	Err        error             `json:"-"`
 }
 
 func parsePatreonLinkFromRedirect(redirect string) (string, bool) {
@@ -117,4 +121,38 @@ func FromOPMLFile(path string) ([]*Subscription, error) {
 		return nil, err
 	}
 	return FromOPML(data)
+}
+
+type Handler struct {
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 5*mb))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error reading body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	subs, err := FromOPML(body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error getting subscription list: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Filter out subscriptions that we didn't find a Patreon link for.
+	filteredSubs := []*Subscription{}
+	for _, s := range subs {
+		if s.PatreonURL != "" && s.Err == nil {
+			filteredSubs = append(filteredSubs, s)
+		}
+	}
+
+	resp, err := json.Marshal(filteredSubs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(resp)
 }

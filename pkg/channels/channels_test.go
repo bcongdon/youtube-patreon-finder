@@ -8,12 +8,12 @@ func TestNew(t *testing.T) {
 		t.Fatalf("New() got err: %v", err)
 	}
 	wantID := "UCrYYRuhieWktnpH3UhRahCw"
-	if c.id != wantID {
-		t.Errorf("c.id got %v, want %v", c.id, wantID)
+	if c.ID != wantID {
+		t.Errorf("c.id got %v, want %v", c.ID, wantID)
 	}
 
-	if c.name != "Foo" {
-		t.Errorf("c.name got %v, want %v", c.name, "Foo")
+	if c.Name != "Foo" {
+		t.Errorf("c.name got %v, want %v", c.Name, "Foo")
 	}
 }
 
